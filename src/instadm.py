@@ -2,14 +2,11 @@ from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager as CM
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from random import randint, uniform
 from time import time, sleep
-import random
 import logging
 import sqlite3
 
@@ -30,8 +27,8 @@ class InstaDM(object):
             "select_user": '//div[text()="{}"]',
             "name": "((//div[@aria-labelledby]/div/span//img[@data-testid='user-avatar'])[1]//..//..//..//div[2]/div[2]/div)[1]",
             "next_button": "//button/*[text()='Next']",
-            "textarea": "//div[@aria-label='Message' and @role='textbox']",
-            "send": "//div[@role='button' and text()='Send']"
+            "textarea": "//textarea[@placeholder]",
+            "send": "//button[text()='Send']"
         }
 
         # Selenium config
@@ -143,10 +140,12 @@ class InstaDM(object):
             greeting = greeting + ", \n\n"
         return greeting
 
-    def typeMessage(self, user, message):
-        # Check for 'Not Now' button and click it if present
-        not_now_button_xpath = "//button[text()='Not Now']"  # Update this XPath as needed
-        self.click_if_element_exists(By.XPATH, not_now_button_xpath)
+    def typeMessage(self, user, message):     
+        # Go to page and type message
+        if self.__wait_for_element__(self.selectors['next_button'], "xpath"):
+            self.__get_element__(
+                self.selectors['next_button'], "xpath").click()
+            self.__random_sleep__()
 
         if self.__wait_for_element__(self.selectors['textarea'], "xpath"):
             message_box = self.__get_element__(self.selectors['textarea'], "xpath")
@@ -155,11 +154,10 @@ class InstaDM(object):
             self.__type_slow__(message_box, message)
 
         if self.__wait_for_element__(self.selectors['send'], "xpath"):
-            send_button = self.__get_element__(self.selectors['send'], "xpath")
-            send_button.click()
+            self.__get_element__(self.selectors['send'], "xpath").click()
             self.__random_sleep__(3, 5)
             print('Message sent successfully')
-            self.__random_sleep__(2, 4)
+
 
     def sendMessage(self, user, message, greeting=None):
         logging.info(f'Send message to {user}')
@@ -168,7 +166,6 @@ class InstaDM(object):
         self.__random_sleep__(2, 4)
 
         try:
-            # Type the username in the search box
             self.__wait_for_element__(self.selectors['search_user'], "name")
             search_box = self.__get_element__(self.selectors['search_user'], "name")
             self.__type_slow__(search_box, user)
@@ -192,25 +189,34 @@ class InstaDM(object):
             if greeting != None:
                 greeting = self.createCustomGreeting(greeting)
 
-            # Send message to the selected user
-            if greeting != None:
-                self.typeMessage(user, greeting + message)
+            # Select user from list
+            elements = self.driver.find_elements_by_xpath(
+                self.selectors['select_user'].format(user))
+            if elements and len(elements) > 0:
+                elements[0].click()
+                self.__random_sleep__()
+
+                if greeting != None:
+                    self.typeMessage(user, greeting + message)
+                else:
+                    self.typeMessage(user, message)
+
+                if self.conn is not None:
+                    self.cursor.execute(
+                        'INSERT INTO message (username, message) VALUES(?, ?)', (user, message))
+                    self.conn.commit()
+                self.__random_sleep__(5, 10)
+
+                return True
+
+            # In case user has changed his username or has a private account
             else:
-                self.typeMessage(user, message)
-
-            if self.conn is not None:
-                self.cursor.execute(
-                    'INSERT INTO message (username, message) VALUES(?, ?)', (user, message))
-                self.conn.commit()
-            self.__random_sleep__(5, 10)
-
-            return True
+                print(f'User {user} not found! Skipping.')
+                return False
 
         except Exception as e:
             logging.error(e)
-            print(f'Error sending message to {user}: {e}')
             return False
-
 
     def sendGroupMessage(self, users, message):
         logging.info(f'Send group message to {users}')
@@ -362,17 +368,16 @@ class InstaDM(object):
                 element.send_keys(character)
                 sleep(random.uniform(0.1, 0.3))  # Delay between key presses
 
-    def __random_sleep__(self, min_sleep=1, max_sleep=3):
-        sleep_time = random.uniform(min_sleep, max_sleep)
-        sleep(sleep_time)
-
+    def __random_sleep__(self, minimum=2, maximum=7):
+        t = randint(minimum, maximum)
+        logging.info(f'Wait {t} seconds')
+        sleep(t)
 
     def __scrolldown__(self):
         self.driver.execute_script(
             "window.scrollTo(0, document.body.scrollHeight);")
 
     def teardown(self):
-        self.__random_sleep__(1, 3)
         self.driver.close()
         self.driver.quit()
 
