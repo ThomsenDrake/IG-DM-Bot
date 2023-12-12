@@ -18,10 +18,10 @@ class InstaDM(object):
     def __init__(self, username, password, headless=True, instapy_workspace=None, profileDir=None):
         self.selectors = {
             "accept_cookies": "//button[text()='Accept']",
-            "home_to_login_button": "//button[text()='Log In']",
+            "home_to_login_button": "//button[text()='Log in']",
             "username_field": "username",
             "password_field": "password",
-            "button_login": "//button/*[text()='Log In']",
+            "button_login": "//button/*[text()='Log in']",
             "login_check": "//*[@aria-label='Home'] | //button[text()='Save Info'] | //button[text()='Not Now']",
             "search_user": "queryBox",
             "select_user": '//div[text()="{}"]',
@@ -84,35 +84,50 @@ class InstaDM(object):
             print(str(e))
 
     def login(self, username, password):
-        # homepage
         self.driver.get('https://instagram.com/?hl=en')
-        self.__random_sleep__(3, 5)
-        if self.__wait_for_element__(self.selectors['accept_cookies'], 'xpath', 10):
-            self.__get_element__(
-                self.selectors['accept_cookies'], 'xpath').click()
-            self.__random_sleep__(3, 5)
-        if self.__wait_for_element__(self.selectors['home_to_login_button'], 'xpath', 10):
-            self.__get_element__(
-                self.selectors['home_to_login_button'], 'xpath').click()
-            self.__random_sleep__(5, 7)
+        self.__random_sleep__(1, 3)
 
-        # login
-        logging.info(f'Login with {username}')
-        self.__scrolldown__()
-        if not self.__wait_for_element__(self.selectors['username_field'], 'name', 10):
-            print('Login Failed: username field not visible')
-        else:
-            self.driver.find_element_by_name(
-                self.selectors['username_field']).send_keys(username)
-            self.driver.find_element_by_name(
-                self.selectors['password_field']).send_keys(password)
-            self.__get_element__(
-                self.selectors['button_login'], 'xpath').click()
-            self.__random_sleep__()
-            if self.__wait_for_element__(self.selectors['login_check'], 'xpath', 10):
-                print('Login Successful')
-            else:
-                print('Login Failed: Incorrect credentials')
+        # Check for splash screen
+        try:
+            login_div_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/main/article/div/div/div/div/div[2]/div[3]/button[1]/div"
+            login_div = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, login_div_xpath))
+            )
+            login_div.click()
+            self.__random_sleep__(1, 3)
+        except TimeoutException:
+            logging.info("No splash screen detected.")
+
+        # Login process
+        try:
+            username_field = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "username"))
+            )
+            self.__type_slow__(username_field, username)
+
+            password_field = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "password"))
+            )
+            self.__type_slow__(password_field, password)
+
+            # Adjusted XPath for the actual login button
+            login_button_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/main/article/div/div/div/div/div[2]/form/div[1]/div[6]/button"
+            login_button = self.driver.find_element(By.XPATH, login_button_xpath)
+            self.__click_element__(login_button)
+            self.__random_sleep__(3, 5)
+        except Exception as e:
+            logging.error(f"Login failed: {e}")
+
+    def click_if_element_exists(self, by, value, timeout=5):
+        """Clicks an element if it exists within a specified timeout."""
+        try:
+            element = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+            element.click()
+            return True
+        except TimeoutException:
+            return False
 
     def createCustomGreeting(self, greeting):
         # Get username and add custom greeting
@@ -133,8 +148,10 @@ class InstaDM(object):
             self.__random_sleep__()
 
         if self.__wait_for_element__(self.selectors['textarea'], "xpath"):
-            self.__type_slow__(self.selectors['textarea'], "xpath", message)
-            self.__random_sleep__()
+            message_box = self.__get_element__(self.selectors['textarea'], "xpath")
+            message_box.click()
+            self.__random_sleep__(1, 2)
+            self.__type_slow__(message_box, message)
 
         if self.__wait_for_element__(self.selectors['send'], "xpath"):
             self.__get_element__(self.selectors['send'], "xpath").click()
@@ -150,8 +167,24 @@ class InstaDM(object):
 
         try:
             self.__wait_for_element__(self.selectors['search_user'], "name")
-            self.__type_slow__(self.selectors['search_user'], "name", user)
-            self.__random_sleep__(1, 2)
+            search_box = self.__get_element__(self.selectors['search_user'], "name")
+            self.__type_slow__(search_box, user)
+
+            # Use the full XPath to select the first checkbox in the results list
+            first_user_checkbox_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/div/div[2]/div/div/div[2]/div[2]/div/div[1]/div[1]/div/div/div[3]/div/label/div/input"
+            first_user_checkbox = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, first_user_checkbox_xpath))
+            )
+            first_user_checkbox.click()
+            self.__random_sleep__(1, 3)
+
+            # Use the new XPath to click the "Next" button
+            next_button_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/div/div[2]/div/div/div[1]/div[3]/div"
+            next_button = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, next_button_xpath))
+            )
+            next_button.click()
+            self.__random_sleep__()
 
             if greeting != None:
                 greeting = self.createCustomGreeting(greeting)
@@ -329,20 +362,11 @@ class InstaDM(object):
         self.driver.implicitly_wait(DEFAULT_IMPLICIT_WAIT)
         return result
 
-    def __type_slow__(self, element_tag, locator, input_text=''):
-        """Type the given input text"""
-        try:
-            self.__wait_for_element__(element_tag, locator, 5)
-            element = self.__get_element__(element_tag, locator)
-            actions = ActionChains(self.driver)
-            actions.click(element).perform()
-            for s in input_text:
-                element.send_keys(s)
-                sleep(uniform(0.005, 0.02))
-
-        except Exception as e:
-            logging.error(e)
-            print(f'Exception when __typeSlow__ : {e}')
+    def __type_slow__(self, element, text):
+        if element:
+            for character in text:
+                element.send_keys(character)
+                sleep(random.uniform(0.1, 0.3))  # Delay between key presses
 
     def __random_sleep__(self, minimum=2, maximum=7):
         t = randint(minimum, maximum)
@@ -356,3 +380,24 @@ class InstaDM(object):
     def teardown(self):
         self.driver.close()
         self.driver.quit()
+
+    def __click_element__(self, element):
+        try:
+            # Scroll into view and click the element
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            self.__random_sleep__(0.5, 1.5)
+            element.click()
+        except Exception as e:
+            logging.error(f"Error clicking element: {e}")
+            # Attempting JavaScript click as a fallback
+            self.driver.execute_script("arguments[0].click();", element)
+    
+    def __random_scroll__(self):
+        scroll_command = "window.scrollBy(0, arguments[0]);"
+        scroll_value = random.randint(-300, 300)  # Scroll up or down randomly
+        self.driver.execute_script(scroll_command, scroll_value)
+
+    def __click_random_element__(self, elements):
+        if elements:
+            random_element = random.choice(elements)
+            self.__click_element__(random_element)
