@@ -21,10 +21,10 @@ class InstaDM(object):
     def __init__(self, username, password, headless=True, instapy_workspace=None, profileDir=None):
         self.selectors = {
             "accept_cookies": "//button[text()='Accept']",
-            "home_to_login_button": "//button[text()='Log In']",
+            "home_to_login_button": "//button[text()='Log in']",
             "username_field": "username",
             "password_field": "password",
-            "button_login": "//button/*[text()='Log In']",
+            "button_login": "//button/*[text()='Log in']",
             "login_check": "//*[@aria-label='Home'] | //button[text()='Save Info'] | //button[text()='Not Now']",
             "search_user": "queryBox",
             "select_user": '//div[text()="{}"]',
@@ -87,35 +87,39 @@ class InstaDM(object):
             print(str(e))
 
     def login(self, username, password):
-        # Open Instagram login page
-        self.driver.get('https://instagram.com/accounts/login/?hl=en')
+        self.driver.get('https://instagram.com/?hl=en')
         self.__random_sleep__(1, 3)
 
+        # Check for splash screen
         try:
-            # Wait for the username field to be present and enter the username
+            login_div_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/main/article/div/div/div/div/div[2]/div[3]/button[1]/div"
+            login_div = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, login_div_xpath))
+            )
+            login_div.click()
+            self.__random_sleep__(1, 3)
+        except TimeoutException:
+            logging.info("No splash screen detected.")
+
+        # Login process
+        try:
             username_field = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "username"))
             )
-            username_field.send_keys(username)
-            self.__random_sleep__(1, 2)  # Wait 1 - 2 seconds before entering the password
+            self.__type_slow__(username_field, username)
 
-            # Wait for the password field to be present and enter the password
             password_field = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "password"))
             )
-            password_field.send_keys(password)
-            self.__random_sleep__(1, 2)  # Wait 1 - 2 seconds before clicking the login button
+            self.__type_slow__(password_field, password)
 
-            # Click the login button
-            login_button = self.driver.find_element_by_xpath("//button[contains(., 'Log in')]")
-            login_button.click()
-            self.__random_sleep__(3, 5)  # Wait 3 - 5 seconds for post-login processing
-
-            # Additional steps can be added here if needed (e.g., handling pop-ups after login)
-
+            # Adjusted XPath for the actual login button
+            login_button_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/main/article/div/div/div/div/div[2]/form/div[1]/div[6]/button"
+            login_button = self.driver.find_element(By.XPATH, login_button_xpath)
+            self.__click_element__(login_button)
+            self.__random_sleep__(3, 5)
         except Exception as e:
-            logging.error(e)
-            print(f"Login failed: {e}")
+            logging.error(f"Login failed: {e}")
 
     def click_if_element_exists(self, by, value, timeout=5):
         """Clicks an element if it exists within a specified timeout."""
@@ -148,8 +152,7 @@ class InstaDM(object):
             message_box = self.__get_element__(self.selectors['textarea'], "xpath")
             message_box.click()
             self.__random_sleep__(1, 2)
-            message_box.send_keys(message)
-            self.__random_sleep__()
+            self.__type_slow__(message_box, message)
 
         if self.__wait_for_element__(self.selectors['send'], "xpath"):
             send_button = self.__get_element__(self.selectors['send'], "xpath")
@@ -167,9 +170,8 @@ class InstaDM(object):
         try:
             # Type the username in the search box
             self.__wait_for_element__(self.selectors['search_user'], "name")
-            self.__random_sleep__(1, 2)
-            self.__type_slow__(self.selectors['search_user'], "name", user)
-            self.__random_sleep__(1, 2)
+            search_box = self.__get_element__(self.selectors['search_user'], "name")
+            self.__type_slow__(search_box, user)
 
             # Use the full XPath to select the first checkbox in the results list
             first_user_checkbox_xpath = "/html/body/div[2]/div/div/div[2]/div/div/div[1]/section/div/div[2]/div/div/div[2]/div[2]/div/div[1]/div[1]/div/div/div[3]/div/label/div/input"
@@ -354,10 +356,9 @@ class InstaDM(object):
         self.driver.implicitly_wait(DEFAULT_IMPLICIT_WAIT)
         return result
 
-    def __type_slow__(self, element_tag, locator, input_text=''):
-        element = self.__get_element__(element_tag, locator)
+    def __type_slow__(self, element, text):
         if element:
-            for character in input_text:
+            for character in text:
                 element.send_keys(character)
                 sleep(random.uniform(0.1, 0.3))  # Delay between key presses
 
@@ -376,9 +377,15 @@ class InstaDM(object):
         self.driver.quit()
 
     def __click_element__(self, element):
-        ActionChains(self.driver).move_to_element(element).perform()
-        self.__random_sleep__(0.5, 1.5)  # Pause before clicking
-        element.click()
+        try:
+            # Scroll into view and click the element
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            self.__random_sleep__(0.5, 1.5)
+            element.click()
+        except Exception as e:
+            logging.error(f"Error clicking element: {e}")
+            # Attempting JavaScript click as a fallback
+            self.driver.execute_script("arguments[0].click();", element)
     
     def __random_scroll__(self):
         scroll_command = "window.scrollBy(0, arguments[0]);"
